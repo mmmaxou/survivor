@@ -62,6 +62,11 @@ class Vehicle {
     force.setMag(this.MAX_SPEED)
     force.sub(this.vel)
     force.limit(this.MAX_FORCE)
+    return force
+  }
+
+  smoothSeek (target) {
+    const force = this.seek(target)
     const currentSpeed = this.vel.mag()
     const stepToStop = currentSpeed / this.MAX_FORCE
     const stepToReach = this.distanceToTarget / currentSpeed
@@ -71,8 +76,6 @@ class Vehicle {
     if (stepToStop * 2 > stepToReach) {
       return p5.Vector.mult(this.vel, -0.5)
     }
-    fill(255, 0, 0)
-    ellipse(target.x, target.y, 4, 4)
     return force
   }
 }
@@ -219,13 +222,13 @@ class VehicleMouvementRandom2D extends VehicleMouvement {
     if (!this.target || frameCount % 100 == 0) {
       this.target = p5.Vector.random2DAtDistance(100).add(windowCenter)
     }
-    return vehicle.seek(this.target)
+    return vehicle.smoothSeek(this.target)
   }
 }
 
 class VehicleMouvementFollowMouse extends VehicleMouvement {
   update (vehicle) {
-    return vehicle.seek(createVector(mouseX, mouseY))
+    return vehicle.smoothSeek(createVector(mouseX, mouseY))
   }
 }
 
@@ -371,6 +374,7 @@ function windowResized () {
   player.experience.createProgressBar()
 }
 
+// BAD
 let mClick = 0
 function mouseClicked () {
   mClick += 1
