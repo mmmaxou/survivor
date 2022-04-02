@@ -146,20 +146,64 @@ class PlayerMouvementFollowMouse {
 }
 
 class DisplayBar {
-  constructor (start, end, color) {
+  constructor (start, end, color, progression = 1) {
     this.start = start
     this.end = end
     this.color = color
-    this.progression = 1
+    this.progression = progression
+    this.width = this.end.x - this.start.x
+    this.height = this.end.y - this.start.y
+    this.widthProgression = this.width
   }
 
-  display () {
-    rect(
-      this.start.x,
-      this.start.y,
-      this.end.x - this.start.x,
-      this.end.y - this.start.y
+  updateProgression (newProgression) {
+    this.progression = newProgression
+    this.widthProgression = this.width * newProgression
+  }
+
+  draw () {
+    noStroke()
+    fill(0, 0, 0)
+    rect(this.start.x, this.start.y, this.width, this.height)
+    fill(this.color)
+    rect(this.start.x, this.start.y, this.widthProgression, this.height)
+  }
+}
+
+class Experience {
+  constructor () {
+    this.createProgressBar()
+    this.exp = 0
+    this.level = 1
+  }
+
+  addExperience (amount) {
+    this.exp += amount
+    if (this.exp > this.level * 100) {
+      this.exp = 0
+      this.level += 1
+    }
+  }
+
+  createProgressBar () {
+    this.progressBar = new DisplayBar(
+      createVector(0, 0),
+      createVector(windowWidth, 5),
+      color(0, 60, 255)
     )
+  }
+
+  update () {
+    const progression = this.exp / (100 * this.level) || 0.01
+    this.progressBar.updateProgression(progression)
+  }
+
+  draw () {
+    this.progressBar.draw()
+    fill(0, 0, 0)
+    textSize(24)
+    textAlign(LEFT, TOP)
+    text(str(this.level), 15, 15)
   }
 }
 
@@ -185,6 +229,8 @@ let windowCenter
 let environment = ENVIRONMENT_SPAWN_AROUND
 let player
 let playerMouvements = []
+let lifeBar
+let experience
 
 function setup () {
   createCanvas(windowWidth, windowHeight)
@@ -196,6 +242,14 @@ function setup () {
 
   playerMouvements.push(new PlayerMouvementRandom2D())
   // playerMouvements.push(new PlayerMouvementFollowMouse())
+
+  lifeBar = new DisplayBar(
+    createVector(0, windowHeight - 5),
+    createVector(windowWidth, windowHeight),
+    color(0, 255, 0)
+  )
+
+  experience = new Experience()
 }
 
 function draw () {
@@ -225,8 +279,19 @@ function draw () {
   ants.forEach(ant => {
     ant.draw()
   })
+
+  lifeBar.draw()
+  experience.addExperience(1)
+  experience.update()
+  experience.draw()
 }
 
 function windowResized () {
   resizeCanvas(windowWidth, windowHeight)
+  lifeBar = new DisplayBar(
+    createVector(0, windowHeight - 5),
+    createVector(windowWidth, windowHeight),
+    color(0, 255, 0)
+  )
+  experience.createProgressBar()
 }
