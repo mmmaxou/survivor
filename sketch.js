@@ -3,7 +3,7 @@
 /// @ts-check
 /// @type frameCount
 
-p5.Vector.random2DatDistance = function (distance) {
+p5.Vector.random2DAtDistance = function (distance) {
   return p5.Vector.random2D().mult(distance)
 }
 
@@ -23,6 +23,7 @@ class Vehicle {
     this.vel = createVector(0, 0)
     this.acc = createVector(0, 0)
     this.force = createVector(0, 0)
+    this.vectorToTarget = createVector(0, 0)
   }
 
   applyForce (force) {
@@ -56,6 +57,7 @@ class Vehicle {
 
   seek (target) {
     const force = p5.Vector.sub(target, this.pos)
+    this.vectorToTarget = force.copy()
     force.setMag(this.MAX_SPEED)
     force.sub(this.vel)
     force.limit(this.MAX_FORCE)
@@ -63,7 +65,7 @@ class Vehicle {
   }
 }
 
-class Ant extends Vehicle {
+class AntVehicle extends Vehicle {
   get MAX_SPEED () {
     return environment.ANT_MAX_SPEED
   }
@@ -76,29 +78,65 @@ class Ant extends Vehicle {
   get RADIUS () {
     return environment.ANT_RADIUS
   }
-  get LIFE_SPAN () {
-    return environment.ANT_LIFESPAN
-  }
-
   constructor (x, y) {
     super(x, y)
-    this.spawnTime = frameCount
-    this._toDelete = false
+    this.collision = false
   }
-
   draw () {
+    if (this.collision) {
+      fill(0, 255, 0)
+    } else {
+      fill(0, 0, 0)
+    }
     ellipse(this.pos.x, this.pos.y, this.RADIUS, this.RADIUS)
   }
-
   update () {
     super.update()
-    if (this.spawnTime + this.LIFE_SPAN < frameCount) {
-      this._toDelete = true
+    if (this.vectorToTarget) {
+      const distanceToTarget = this.vectorToTarget.mag()
+      this.collision = distanceToTarget < this.RADIUS
     }
   }
 }
 
-class Player extends Vehicle {
+class Ant {
+  get LIFE_SPAN () {
+    return environment.ANT_LIFESPAN
+  }
+
+  static RandomCreateAroundVehicle (vehicle) {
+    const spawnLocation = p5.Vector.random2DAtDistance(Constants.SPAWN_DISTANCE)
+    spawnLocation.add(vehicle.pos)
+    const antVehicle = new AntVehicle(spawnLocation.x, spawnLocation.y)
+    const ant = new Ant()
+    ant.vehicle = antVehicle
+    return ant
+  }
+
+  constructor () {
+    this.vehicle = new AntVehicle()
+    this.spawnTime = frameCount
+    this._toDelete = false
+  }
+
+  update () {
+    // Ant follow the player
+    this.vehicle.applyForce(this.vehicle.seek(player.vehicle.pos))
+    this.vehicle.update()
+    if (this.spawnTime + this.LIFE_SPAN < frameCount) {
+      this._toDelete = true
+    }
+    if (this.vehicle.collision) {
+      player.collide(this)
+    }
+  }
+
+  draw () {
+    this.vehicle.draw()
+  }
+}
+
+class PlayerVehicle extends Vehicle {
   get MAX_SPEED () {
     return environment.PLAYER_MAX_SPEED
   }
@@ -112,7 +150,44 @@ class Player extends Vehicle {
     return environment.PLAYER_RADIUS
   }
   draw () {
+    stroke(0, 0, 0)
+    fill(255, 255, 255)
     ellipse(this.pos.x, this.pos.y, this.RADIUS, this.RADIUS)
+  }
+}
+
+class Player {
+  constructor () {
+    this.maxLife = 100
+    this.life = this.maxLife
+    this.movements = []
+    this.experience = new Experience()
+    this.vehicle = new PlayerVehicle(windowCenter.x, windowCenter.y)
+    this.createLifeBar()
+  }
+  collide (ant) {
+    this.life -= 1
+  }
+  createLifeBar () {
+    this.lifeBar = new DisplayBar(
+      createVector(0, windowHeight - 5),
+      createVector(windowWidth, windowHeight),
+      color(30, 240, 60)
+    )
+  }
+  update () {
+    this.movements.forEach(playerMouvement => {
+      playerMouvement.update(this.vehicle)
+    })
+    this.experience.addExperience(1)
+    this.experience.update()
+    this.lifeBar.updateProgression(this.life / this.maxLife)
+    this.vehicle.update()
+  }
+  draw () {
+    this.vehicle.draw()
+    this.lifeBar.draw()
+    this.experience.draw()
   }
 }
 
@@ -125,23 +200,23 @@ class Constants {
   }
 }
 
-class PlayerMouvementRandom2D {
+class VehicleMouvementRandom2D {
   constructor () {
     this.target = createVector()
   }
 
-  update (player) {
+  update (vehicle) {
     if (frameCount % 100 == 0) {
-      this.target = p5.Vector.random2DatDistance(200).add(windowCenter)
+      this.target = p5.Vector.random2DAtDistance(200).add(windowCenter)
     }
-    player.applyForce(player.seek(this.target))
+    vehicle.applyForce(vehicle.seek(this.target))
   }
 }
 
-class PlayerMouvementFollowMouse {
-  update (player) {
+class VehicleMouvementFollowMouse {
+  update (vehicle) {
     const mousePos = createVector(mouseX, mouseY)
-    player.applyForce(player.seek(mousePos))
+    vehicle.applyForce(vehicle.seek(mousePos))
   }
 }
 
@@ -188,7 +263,7 @@ class Experience {
   createProgressBar () {
     this.progressBar = new DisplayBar(
       createVector(0, 0),
-      createVector(windowWidth, 5),
+      createVector(windowWidth, 8),
       color(0, 60, 255)
     )
   }
@@ -209,7 +284,7 @@ class Experience {
 
 const ENVIRONMENT_SPAWN_AROUND = {
   SPAWN_DISTANCE: 600,
-  ANTS_MAXIMUM: 200,
+  ANTS_MAXIMUM: 1,
 
   PLAYER_RADIUS: 25,
   PLAYER_MAX_SPEED: 3,
@@ -220,17 +295,16 @@ const ENVIRONMENT_SPAWN_AROUND = {
   ANT_MAX_SPEED: 1,
   ANT_MAX_FORCE: 0.1,
   ANT_PURSUE_SPEED: 1,
-  ANT_LIFESPAN: 600
+  ANT_LIFESPAN: 700
 }
 
 let ants = []
-let closeAnts = {}
+/** @type {p5.Vector} */
 let windowCenter
 let environment = ENVIRONMENT_SPAWN_AROUND
+/** @type {Player} */
 let player
 let playerMouvements = []
-let lifeBar
-let experience
 
 function setup () {
   createCanvas(windowWidth, windowHeight)
@@ -238,60 +312,35 @@ function setup () {
   background(250, 250, 250)
 
   windowCenter = createVector(windowWidth / 2, windowHeight / 2)
-  player = new Player(windowCenter.x, windowCenter.y)
-
-  playerMouvements.push(new PlayerMouvementRandom2D())
-  // playerMouvements.push(new PlayerMouvementFollowMouse())
-
-  lifeBar = new DisplayBar(
-    createVector(0, windowHeight - 5),
-    createVector(windowWidth, windowHeight),
-    color(0, 255, 0)
-  )
-
-  experience = new Experience()
+  player = new Player()
+  player.movements.push(new VehicleMouvementRandom2D())
+  // player.movements.push(new VehicleMouvementFollowMouse())
 }
 
 function draw () {
   background(255, 255, 255, 50)
 
-  playerMouvements.forEach(playerMouvement => playerMouvement.update(player))
+  player.update()
+  player.draw()
 
   ants = ants.filter(ant => !ant._toDelete)
   if (frameCount % 12 == 0 && ants.length < Constants.ANTS_MAXIMUM) {
-    const spawnLocation = p5.Vector.random2DatDistance(Constants.SPAWN_DISTANCE)
-    spawnLocation.add(player.pos)
-    const newAnt = new Ant(spawnLocation.x, spawnLocation.y)
-    ants.push(newAnt)
+    ants.push(Ant.RandomCreateAroundVehicle(player.vehicle))
   }
+
   ants.forEach(ant => {
-    ant.applyForce(ant.seek(player.pos))
     ant.update()
   })
-
-  stroke(0, 0, 0)
-  fill(255, 255, 255)
-  player.update()
-  player.draw()
 
   noStroke()
   fill(0, 0, 0)
   ants.forEach(ant => {
     ant.draw()
   })
-
-  lifeBar.draw()
-  experience.addExperience(1)
-  experience.update()
-  experience.draw()
 }
 
 function windowResized () {
   resizeCanvas(windowWidth, windowHeight)
-  lifeBar = new DisplayBar(
-    createVector(0, windowHeight - 5),
-    createVector(windowWidth, windowHeight),
-    color(0, 255, 0)
-  )
-  experience.createProgressBar()
+  player.createLifeBar()
+  player.experience.createProgressBar()
 }
