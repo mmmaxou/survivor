@@ -22,8 +22,8 @@ class Vehicle {
     this.pos = createVector(x, y)
     this.vel = createVector(0, 0)
     this.acc = createVector(0, 0)
-    this.force = createVector(0, 0)
     this.vectorToTarget = createVector(0, 0)
+    this.distanceToTarget = 0
   }
 
   applyForce (force) {
@@ -58,9 +58,21 @@ class Vehicle {
   seek (target) {
     const force = p5.Vector.sub(target, this.pos)
     this.vectorToTarget = force.copy()
+    this.distanceToTarget = force.mag()
     force.setMag(this.MAX_SPEED)
     force.sub(this.vel)
     force.limit(this.MAX_FORCE)
+    const currentSpeed = this.vel.mag()
+    const stepToStop = currentSpeed / this.MAX_FORCE
+    const stepToReach = this.distanceToTarget / currentSpeed
+    if (this.distanceToTarget < this.MAX_FORCE) {
+      return this.vel.setMag(0)
+    }
+    if (stepToStop * 2 > stepToReach) {
+      return p5.Vector.mult(this.vel, -0.5)
+    }
+    fill(255, 0, 0)
+    ellipse(target.x, target.y, 4, 4)
     return force
   }
 }
@@ -85,17 +97,15 @@ class AntVehicle extends Vehicle {
   draw () {
     if (this.collision) {
       fill(0, 255, 0)
-    } else {
+      ellipse(this.pos.x, this.pos.y, this.RADIUS, this.RADIUS)
       fill(0, 0, 0)
+    } else {
+      ellipse(this.pos.x, this.pos.y, this.RADIUS, this.RADIUS)
     }
-    ellipse(this.pos.x, this.pos.y, this.RADIUS, this.RADIUS)
   }
   update () {
     super.update()
-    if (this.vectorToTarget) {
-      const distanceToTarget = this.vectorToTarget.mag()
-      this.collision = distanceToTarget < this.RADIUS
-    }
+    this.collision = this.distanceToTarget < this.RADIUS
   }
 }
 
@@ -160,7 +170,6 @@ class Player {
   constructor () {
     this.maxLife = 100
     this.life = this.maxLife
-    this.movements = []
     this.experience = new Experience()
     this.vehicle = new PlayerVehicle(windowCenter.x, windowCenter.y)
     this.createLifeBar()
@@ -176,8 +185,9 @@ class Player {
     )
   }
   update () {
-    this.movements.forEach(playerMouvement => {
-      playerMouvement.update(this.vehicle)
+    environment.MOVEMENTS.forEach(movement => {
+      let force = movement.update(this.vehicle)
+      this.vehicle.applyForce(force)
     })
     this.experience.addExperience(1)
     this.experience.update()
@@ -200,23 +210,22 @@ class Constants {
   }
 }
 
-class VehicleMouvementRandom2D {
-  constructor () {
-    this.target = createVector()
-  }
+class VehicleMouvement {
+  update (vehicle) {}
+}
 
+class VehicleMouvementRandom2D extends VehicleMouvement {
   update (vehicle) {
-    if (frameCount % 100 == 0) {
-      this.target = p5.Vector.random2DAtDistance(200).add(windowCenter)
+    if (!this.target || frameCount % 100 == 0) {
+      this.target = p5.Vector.random2DAtDistance(100).add(windowCenter)
     }
-    vehicle.applyForce(vehicle.seek(this.target))
+    return vehicle.seek(this.target)
   }
 }
 
-class VehicleMouvementFollowMouse {
+class VehicleMouvementFollowMouse extends VehicleMouvement {
   update (vehicle) {
-    const mousePos = createVector(mouseX, mouseY)
-    vehicle.applyForce(vehicle.seek(mousePos))
+    return vehicle.seek(createVector(mouseX, mouseY))
   }
 }
 
@@ -255,9 +264,13 @@ class Experience {
   addExperience (amount) {
     this.exp += amount
     if (this.exp > this.level * 100) {
-      this.exp = 0
-      this.level += 1
+      this.levelUp()
     }
+  }
+
+  levelUp () {
+    this.exp = 0
+    this.level += 1
   }
 
   createProgressBar () {
@@ -282,26 +295,41 @@ class Experience {
   }
 }
 
-const ENVIRONMENT_SPAWN_AROUND = {
-  SPAWN_DISTANCE: 600,
-  ANTS_MAXIMUM: 1,
+const ENVIRONMENT_DEFAULT = {
+  SPAWN_DISTANCE: 500,
+  ANTS_MAXIMUM: 50,
 
   PLAYER_RADIUS: 25,
   PLAYER_MAX_SPEED: 3,
-  PLAYER_MAX_FORCE: 0.35,
+  PLAYER_MAX_FORCE: 0.5,
   PLAYER_PURSUE_SPEED: 1,
 
   ANT_RADIUS: 10,
   ANT_MAX_SPEED: 1,
   ANT_MAX_FORCE: 0.1,
   ANT_PURSUE_SPEED: 1,
-  ANT_LIFESPAN: 700
+  ANT_LIFESPAN: 700,
+
+  /** @type {Array<VehicleMouvement>} */
+  MOVEMENTS: [new VehicleMouvementFollowMouse()]
+}
+
+const ENVIRONMENT_SPAWN_AROUND = {
+  ...ENVIRONMENT_DEFAULT,
+  ANTS_MAXIMUM: 399
+}
+
+const ENVIRONMENT_SINGLE_ENNEMY = {
+  ...ENVIRONMENT_DEFAULT,
+  ANTS_MAXIMUM: 1,
+  /** @type {Array<VehicleMouvement>} */
+  MOVEMENTS: [new VehicleMouvementRandom2D()]
 }
 
 let ants = []
 /** @type {p5.Vector} */
 let windowCenter
-let environment = ENVIRONMENT_SPAWN_AROUND
+let environment = ENVIRONMENT_SINGLE_ENNEMY
 /** @type {Player} */
 let player
 let playerMouvements = []
@@ -313,8 +341,6 @@ function setup () {
 
   windowCenter = createVector(windowWidth / 2, windowHeight / 2)
   player = new Player()
-  player.movements.push(new VehicleMouvementRandom2D())
-  // player.movements.push(new VehicleMouvementFollowMouse())
 }
 
 function draw () {
@@ -343,4 +369,14 @@ function windowResized () {
   resizeCanvas(windowWidth, windowHeight)
   player.createLifeBar()
   player.experience.createProgressBar()
+}
+
+let mClick = 0
+function mouseClicked () {
+  mClick += 1
+  if (mClick % 2 == 0) {
+    environment = ENVIRONMENT_SPAWN_AROUND
+  } else {
+    environment = ENVIRONMENT_SINGLE_ENNEMY
+  }
 }
