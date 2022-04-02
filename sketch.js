@@ -8,9 +8,15 @@ p5.Vector.random2DatDistance = function (distance) {
 }
 
 class Vehicle {
-  MAX_SPEED = 1
-  MAX_FORCE = 1
-  PURSUE_SPEED = 1
+  get MAX_SPEED () {
+    return 1
+  }
+  get MAX_FORCE () {
+    return 1
+  }
+  get PURSUE_SPEED () {
+    return 1
+  }
 
   constructor (x, y) {
     this.pos = createVector(x, y)
@@ -58,11 +64,21 @@ class Vehicle {
 }
 
 class Ant extends Vehicle {
-  RADIUS = 12
-  MAX_SPEED = 1
-  MAX_FORCE = 0.05
-  PURSUE_SPEED = 0.7
-  LIFE_SPAN = 300
+  get MAX_SPEED () {
+    return environment.ANT_MAX_SPEED
+  }
+  get MAX_FORCE () {
+    return environment.ANT_MAX_FORCE
+  }
+  get PURSUE_SPEED () {
+    return environment.ANT_PURSUE_SPEED
+  }
+  get RADIUS () {
+    return environment.ANT_RADIUS
+  }
+  get LIFE_SPAN () {
+    return environment.ANT_LIFESPAN
+  }
 
   constructor (x, y) {
     super(x, y)
@@ -83,48 +99,119 @@ class Ant extends Vehicle {
 }
 
 class Player extends Vehicle {
-  RADIUS = 20
-  MAX_SPEED = 3.5
-  MAX_FORCE = 0.35
-  PURSUE_SPEED = 1
-
+  get MAX_SPEED () {
+    return environment.PLAYER_MAX_SPEED
+  }
+  get MAX_FORCE () {
+    return environment.PLAYER_MAX_FORCE
+  }
+  get PURSUE_SPEED () {
+    return environment.PLAYER_PURSUE_SPEED
+  }
+  get RADIUS () {
+    return environment.PLAYER_RADIUS
+  }
   draw () {
     ellipse(this.pos.x, this.pos.y, this.RADIUS, this.RADIUS)
   }
 }
 
-const ANTS_MAXIMUM = 200
+class Constants {
+  static get SPAWN_DISTANCE () {
+    return environment.SPAWN_DISTANCE
+  }
+  static get ANTS_MAXIMUM () {
+    return environment.ANTS_MAXIMUM
+  }
+}
+
+class PlayerMouvementRandom2D {
+  constructor () {
+    this.target = createVector()
+  }
+
+  update (player) {
+    if (frameCount % 100 == 0) {
+      this.target = p5.Vector.random2DatDistance(200).add(windowCenter)
+    }
+    player.applyForce(player.seek(this.target))
+  }
+}
+
+class PlayerMouvementFollowMouse {
+  update (player) {
+    const mousePos = createVector(mouseX, mouseY)
+    player.applyForce(player.seek(mousePos))
+  }
+}
+
+class DisplayBar {
+  constructor (start, end, color) {
+    this.start = start
+    this.end = end
+    this.color = color
+    this.progression = 1
+  }
+
+  display () {
+    rect(
+      this.start.x,
+      this.start.y,
+      this.end.x - this.start.x,
+      this.end.y - this.start.y
+    )
+  }
+}
+
+const ENVIRONMENT_SPAWN_AROUND = {
+  SPAWN_DISTANCE: 600,
+  ANTS_MAXIMUM: 200,
+
+  PLAYER_RADIUS: 25,
+  PLAYER_MAX_SPEED: 3,
+  PLAYER_MAX_FORCE: 0.35,
+  PLAYER_PURSUE_SPEED: 1,
+
+  ANT_RADIUS: 10,
+  ANT_MAX_SPEED: 1,
+  ANT_MAX_FORCE: 0.1,
+  ANT_PURSUE_SPEED: 1,
+  ANT_LIFESPAN: 600
+}
+
 let ants = []
 let closeAnts = {}
 let windowCenter
+let environment = ENVIRONMENT_SPAWN_AROUND
 let player
+let playerMouvements = []
 
 function setup () {
   createCanvas(windowWidth, windowHeight)
   angleMode(DEGREES)
-  windowCenter = createVector(windowWidth / 2, windowHeight / 2)
   background(250, 250, 250)
+
+  windowCenter = createVector(windowWidth / 2, windowHeight / 2)
   player = new Player(windowCenter.x, windowCenter.y)
+
+  playerMouvements.push(new PlayerMouvementRandom2D())
+  // playerMouvements.push(new PlayerMouvementFollowMouse())
 }
 
 function draw () {
   background(255, 255, 255, 50)
-  const mousePos = createVector(mouseX, mouseY)
-  if (ants.length > 1) {
-    player.applyForce(player.evade(ants[0]))
-  }
-  player.applyForce(player.seek(mousePos))
-  player.applyForce(player.seek(windowCenter))
-  player.applyForce(p5.Vector.random2D())
+
+  playerMouvements.forEach(playerMouvement => playerMouvement.update(player))
 
   ants = ants.filter(ant => !ant._toDelete)
-  if (frameCount % 30 && ants.length < ANTS_MAXIMUM) {
-    const spawnLocation = p5.Vector.random2DatDistance(500).add(player.pos)
+  if (frameCount % 12 == 0 && ants.length < Constants.ANTS_MAXIMUM) {
+    const spawnLocation = p5.Vector.random2DatDistance(Constants.SPAWN_DISTANCE)
+    spawnLocation.add(player.pos)
     const newAnt = new Ant(spawnLocation.x, spawnLocation.y)
     ants.push(newAnt)
   }
   ants.forEach(ant => {
-    ant.applyForce(ant.pursue(player))
+    ant.applyForce(ant.seek(player.pos))
     ant.update()
   })
 
