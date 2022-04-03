@@ -128,7 +128,7 @@ class Ant {
 
   constructor () {
     this.vehicle = new AntVehicle()
-    this.spawnTime = frameCount
+    this.lifeSpan = new LifeSpanComponent(this.LIFE_SPAN)
     this._toDelete = false
   }
 
@@ -136,8 +136,9 @@ class Ant {
     // Ant follow the player
     this.vehicle.applyForce(this.vehicle.seek(player.vehicle.pos))
     this.vehicle.update()
-    if (this.spawnTime + this.LIFE_SPAN < frameCount) {
-      this._toDelete = true
+    this.lifeSpan.update()
+    if (this.lifeSpan.timeOut) {
+      this.destroy()
     }
     if (this.vehicle.collision) {
       player.collide(this)
@@ -146,6 +147,10 @@ class Ant {
 
   draw () {
     this.vehicle.draw()
+  }
+
+  destroy () {
+    this._toDelete = true
   }
 }
 
@@ -196,6 +201,11 @@ class Player {
     this.experience.update()
     this.lifeBar.updateProgression(this.life / this.maxLife)
     this.vehicle.update()
+
+    // Attacks
+    if (frameCount % 30 === 0) {
+      immobileBoxAttacks.push(new ImmobileBoxAttack(this.vehicle.pos))
+    }
   }
   draw () {
     this.vehicle.draw()
@@ -229,6 +239,26 @@ class VehicleMouvementRandom2D extends VehicleMouvement {
 class VehicleMouvementFollowMouse extends VehicleMouvement {
   update (vehicle) {
     return vehicle.smoothSeek(createVector(mouseX, mouseY))
+  }
+}
+
+class VehicleMouvementEvade extends VehicleMouvement {
+  update (vehicle) {
+    const totalForce = createVector(0, 0)
+    ants.forEach(ant => {
+      const evadeForce = vehicle.evade(ant.vehicle)
+      const weight = (vehicle.RADIUS * 2) / (ant.vehicle.distanceToTarget + 1)
+      evadeForce.mult(weight)
+      totalForce.add(evadeForce)
+    })
+    totalForce.limit(vehicle.MAX_FORCE)
+    return totalForce
+  }
+}
+
+class VehicleMouvementCenter extends VehicleMouvement {
+  update (vehicle) {
+    return vehicle.seek(windowCenter)
   }
 }
 
@@ -329,13 +359,58 @@ const ENVIRONMENT_SINGLE_ENNEMY = {
   MOVEMENTS: [new VehicleMouvementRandom2D()]
 }
 
+const ENVIRONMENT_EVADE = {
+  ...ENVIRONMENT_DEFAULT,
+  ANTS_MAXIMUM: 20,
+  /** @type {Array<VehicleMouvement>} */
+  MOVEMENTS: [new VehicleMouvementEvade(), new VehicleMouvementRandom2D()]
+}
+
+class LifeSpanComponent {
+  constructor (lifeSpan) {
+    this.startTime = frameCount
+    this.endTime = this.startTime + lifeSpan
+    this.timeOut = false
+  }
+  update () {
+    this.timeOut = this.endTime < frameCount
+  }
+}
+
+class ImmobileBoxAttack {
+  WIDTH = 20
+  HEIGHT = 20
+  constructor (pos) {
+    this.x = pos.x - this.WIDTH / 2
+    this.y = pos.y - this.HEIGHT / 2
+    this.spawn = frameCount
+    this.lifeSpan = new LifeSpanComponent(175)
+    this._toDelete = false
+  }
+
+  update () {
+    this.lifeSpan.update()
+    if (this.lifeSpan.timeOut) {
+      this.destroy()
+    }
+  }
+
+  draw () {
+    rect(this.x, this.y, this.WIDTH, this.HEIGHT)
+  }
+
+  destroy () {
+    this._toDelete = true
+  }
+}
+
 let ants = []
 /** @type {p5.Vector} */
 let windowCenter
-let environment = ENVIRONMENT_SINGLE_ENNEMY
+let environment = ENVIRONMENT_EVADE
 /** @type {Player} */
 let player
-let playerMouvements = []
+let immobileBoxAttacks = []
 
 function setup () {
   createCanvas(windowWidth, windowHeight)
@@ -349,18 +424,28 @@ function setup () {
 function draw () {
   background(255, 255, 255, 50)
 
-  player.update()
-  player.draw()
-
+  // MANIPULATION
+  immobileBoxAttacks = immobileBoxAttacks.filter(box => !box._toDelete)
   ants = ants.filter(ant => !ant._toDelete)
   if (frameCount % 12 == 0 && ants.length < Constants.ANTS_MAXIMUM) {
     ants.push(Ant.RandomCreateAroundVehicle(player.vehicle))
   }
 
-  ants.forEach(ant => {
-    ant.update()
+  // PHYSICS
+  player.update()
+  ants.forEach(ant => ant.update())
+  immobileBoxAttacks.forEach(box => box.update())
+
+  // LAYER PLAYER
+  player.draw()
+
+  // LAYER ATTACKS
+  fill(14, 147, 60)
+  immobileBoxAttacks.forEach(box => {
+    box.draw()
   })
 
+  // LAYER ANTS
   noStroke()
   fill(0, 0, 0)
   ants.forEach(ant => {
@@ -376,11 +461,12 @@ function windowResized () {
 
 // BAD
 let mClick = 0
+let allMouvements = [
+  ENVIRONMENT_SPAWN_AROUND,
+  ENVIRONMENT_SINGLE_ENNEMY,
+  ENVIRONMENT_EVADE
+]
 function mouseClicked () {
-  mClick += 1
-  if (mClick % 2 == 0) {
-    environment = ENVIRONMENT_SPAWN_AROUND
-  } else {
-    environment = ENVIRONMENT_SINGLE_ENNEMY
-  }
+  mClick = (mClick + 1) % allMouvements.length
+  environment = allMouvements[mClick]
 }
